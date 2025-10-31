@@ -684,7 +684,7 @@ const AdmitCard = ({ data }) => (
             ) : (
               <div className="w-32 h-16 border-2 border-dashed flex items-center justify-center text-gray-500">No Signature</div>
             )}
-            <p className="text-sm font-semibold border-t border-gray-400 pt-1 mt-2">Candidate's Signature</g>
+            <p className="text-sm font-semibold border-t border-gray-400 pt-1 mt-2">Candidate's Signature</p>
           </div>
         </div>
 
