@@ -1,0 +1,10 @@
+@import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap)');
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Custom class for min-height */
+.min-h-screen-nonav {
+  min-height: calc(100vh - 68px); /* 68px is the height of our header */
+}
