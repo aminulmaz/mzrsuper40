@@ -324,66 +324,64 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
     }
 
     setLoading(true);
-    setFormError('');
+setFormError('');
 
-    try {
-      // 1. Generate Application Number
-      const appNumber = `AS40-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-      
-      let photoURL = '';
-      let signatureURL = '';
+try {
+  // 1. Generate Application Number
+  const appNumber = `AS40-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
-      // 2. Upload Photo (if exists)
-      if (photo) {
-        const photoRef = ref(storage, `uploads/${appNumber}-photo-${photo.name}`);
-        const photoSnap = await uploadBytes(photoRef, photo);
-        photoURL = await getDownloadURL(photoSnap.ref);
-      }
+  // 2. Upload Files (if present)
+  let photoURL = '';
+  let signatureURL = '';
 
-      // 3. Upload Signature (if exists)
-      if (signature) {
-        const sigRef = ref(storage, `uploads/${appNumber}-signature-${signature.name}`);
-        const sigSnap = await uploadBytes(sigRef, signature);
-        signatureURL = await getDownloadURL(sigSnap.ref);
-      }
-      
-      // 4. Prepare data for Firestore
-      const clientSubmittedAt = new Date();
-     const uiData = {
-        ...formData,
-        applicationNumber: appNumber,
-        photoURL: photoURL,
-        signatureURL: signatureURL,
-        status: 'Pending',
-        submittedAt: clientSubmittedAt,
-        email: formData.email,
-        rollNumber: '', // Initialize admit card fields
-        examTime: ''
-      };
+  if (photo) {
+    const photoRef = ref(storage, `uploads/${appNumber}-photo-${photo.name}`);
+    const photoSnap = await uploadBytes(photoRef, photo);
+    photoURL = await getDownloadURL(photoSnap.ref);
+  }
 
-      // 5. Save to Firestore
-  
-      await addDoc(collection(db, "applications"), {
-  ...uiData,
-  submittedAt: serverTimestamp(),   // <-- only in DB
-});
-      // 6. Send email (don't block the UX)
-      sendConfirmationEmail(applicationData);
+  if (signature) {
+    const sigRef = ref(storage, `uploads/${appNumber}-signature-${signature.name}`);
+    const sigSnap = await uploadBytes(sigRef, signature);
+    signatureURL = await getDownloadURL(sigSnap.ref);
+  }
 
-      // 7. Redirect to success page
-      setSubmittedData(applicationData);
-      setStatusCheckData(applicationData); // Also set data for status check
-      setView('success');
+  // 3. Client timestamp for UI
+  const clientSubmittedAt = new Date();
 
-    } catch (error) {
-      console.error("Error submitting application: ", error);
-      setFormError(`An error occurred: ${error.message}. Please try again.`);
-      window.scrollTo(0, 0);
-    } finally {
-      setLoading(false);
-    }
+  // 4. UI Safe Data
+  const uiData = {
+    ...formData,
+    applicationNumber: appNumber,
+    photoURL,
+    signatureURL,
+    status: 'Pending',
+    submittedAt: clientSubmittedAt,   // ✅ UI date
+    email: formData.email,
+    rollNumber: '',
+    examTime: '',
   };
 
+  // 5. Write to Firestore with server timestamp
+  await addDoc(collection(db, "applications"), {
+    ...uiData,
+    submittedAt: serverTimestamp(),  // ✅ DB timestamp
+  });
+
+  // 6. Send email (non-blocking)
+  sendConfirmationEmail(uiData);
+
+  // 7. Move to success view with UI data
+  setSubmittedData(uiData);
+  setStatusCheckData(uiData);
+  setView('success');
+
+} catch (error) {
+  console.error("Error submitting application:", error);
+  setFormError(`An error occurred: ${error.message}`);
+} finally {
+  setLoading(false);
+}
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-8 bg-white rounded-lg shadow-xl my-12">
@@ -640,6 +638,7 @@ const ApplicationData = ({ data, isForModal = false }) => (
       : new Date().toLocaleString()                            // fallback
   }
 </p>
+
           <p className="mt-12 border-t border-gray-400 pt-2 inline-block">Signature of Applicant</p>
         </div>
       )}
