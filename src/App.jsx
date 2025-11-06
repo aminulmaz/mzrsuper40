@@ -348,22 +348,25 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
       }
       
       // 4. Prepare data for Firestore
-      const applicationData = {
+      const clientSubmittedAt = new Date();
+     const uiData = {
         ...formData,
         applicationNumber: appNumber,
         photoURL: photoURL,
         signatureURL: signatureURL,
         status: 'Pending',
-        submittedAt: serverTimestamp(),
+        submittedAt: clientSubmittedAt,
         email: formData.email,
         rollNumber: '', // Initialize admit card fields
         examTime: ''
       };
 
       // 5. Save to Firestore
-      const docRef = await addDoc(collection(db, "applications"), applicationData);
-      console.log("Application submitted with ID: ", docRef.id);
-      
+  
+      await addDoc(collection(db, "applications"), {
+  ...uiData,
+  submittedAt: serverTimestamp(),   // <-- only in DB
+});
       // 6. Send email (don't block the UX)
       sendConfirmationEmail(applicationData);
 
@@ -624,7 +627,19 @@ const ApplicationData = ({ data, isForModal = false }) => (
 
       {!isForModal && (
         <div className="mt-16 text-center text-sm text-gray-600">
-          <p>Submitted On: {data.submittedAt ? data.submittedAt.toDate().toLocaleString() : new Date().toLocaleString()}</p>
+          <p>
+  Submitted On: {
+    data?.submittedAt
+      ? (typeof data.submittedAt.toDate === 'function'
+          ? data.submittedAt.toDate().toLocaleString()        // Firestore Timestamp
+          : (data.submittedAt instanceof Date
+              ? data.submittedAt.toLocaleString()              // plain Date
+              : new Date(data.submittedAt).toLocaleString()    // string/number
+            )
+        )
+      : new Date().toLocaleString()                            // fallback
+  }
+</p>
           <p className="mt-12 border-t border-gray-400 pt-2 inline-block">Signature of Applicant</p>
         </div>
       )}
@@ -1406,7 +1421,15 @@ export default function App() {
       case 'login':
         return <AdminLogin setView={setView} setAuthError={setAuthError} />;
       case 'success':
-        return <SubmissionSuccess data={submittedData} setView={setView} />;
+        if (!submittedData) {
+    return (
+      <div className="flex items-center justify-center min-h-screen-nonav">
+        <Spinner />
+        <span className="ml-2 text-gray-600">Preparing your confirmation…</span>
+      </div>
+    );
+  }
+  return <SubmissionSuccess data={submittedData} setView={setView} />;
       case 'statusCheck':
         return <StatusCheck setView={setView} statusCheckData={statusCheckData} setStatusCheckData={setStatusCheckData} />;
       case 'dashboard':
