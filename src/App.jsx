@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-// import html2pdf from 'html2pdf.js'; // <-- THIS WAS THE ERROR, I'VE REMOVED IT
-import { initializeApp } from 'firebase/app';
+// import html2pdf from 'html2pdf.js'; // <-- keep removed if loading via <script>
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
   signInAnonymously, 
@@ -49,47 +49,51 @@ import {
   BookOpen
 } from 'lucide-react';
 
-// --- Firebase Configuration ---
-// This code block ONLY loads from Vite/Vercel environment variables.
+/* ------------------------------------------------------------------
+   🔧 Firebase Configuration (single source of truth)
+   - Uses only VITE_FIREBASE_* env vars (as required by Vite)
+   - Validates required envs
+   - Guards initializeApp for Vite HMR using getApps()
+------------------------------------------------------------------- */
+const requiredEnvVars = [
+  'VITE_API_KEY',
+  'VITE_AUTH_DOMAIN',
+  'VITE_PROJECT_ID',
+  'VITE_STORAGE_BUCKET',
+  'VITE_MESSAGING_SENDER_ID',
+  'VITE_APP_ID',
+];
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
-
-const missingVars = requiredEnvVars.filter(key => !import.meta.env[key]);
-
-let firebaseConfig = {};
+const missingVars = requiredEnvVars.filter((k) => !import.meta.env[k]);
 let configError = null;
 
 if (missingVars.length > 0) {
-  console.error("Vercel is missing environment variables:", missingVars);
-  configError = `Vercel is missing environment variables: ${missingVars.join(', ')}. Please check your Vercel project settings.`;
-} else {
-  firebaseConfig = {
-    apiKey: import.meta.env.VITE_API_KEY,
-    authDomain: import.meta.env.VITE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_APP_ID
-  };
+  console.error('Missing environment variables:', missingVars);
+  configError = `Missing environment variables: ${missingVars.join(', ')}`;
 }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_API_KEY,
+  authDomain: import.meta.env.VITE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_APP_ID,
+};
+
+// Avoid double-initialization during HMR
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
 // Use a fallback app ID if not provided
-const appId = import.meta.env.VITE_APP_ID || 'default-app-id';
+const appId = import.meta.env.VITE_FIREBASE_APP_ID || 'default-app-id';
 
-// --- Helper Components ---
+/* ------------------------------------------------------------------
+   UI helpers
+------------------------------------------------------------------- */
 
 // Loading Spinner
 const Spinner = () => (
@@ -153,7 +157,7 @@ const FormRadioGroup = ({ label, name, options, value, onChange }) => (
   </fieldset>
 );
 
-// File Input (Now optional)
+// File Input (optional)
 const FileInput = ({ id, label, max_size, onChange, error }) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">
@@ -175,9 +179,9 @@ const FileInput = ({ id, label, max_size, onChange, error }) => (
   </div>
 );
 
-// --- Main Application Components ---
-
-// App Header
+/* ------------------------------------------------------------------
+   App Header
+------------------------------------------------------------------- */
 const AppHeader = ({ user, onLoginClick, onLogoutClick }) => (
   <header className="bg-white shadow-md sticky top-0 z-50 print:hidden">
     <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -220,7 +224,9 @@ const AppHeader = ({ user, onLoginClick, onLogoutClick }) => (
   </header>
 );
 
-// Student Application Form
+/* ------------------------------------------------------------------
+   Student Application Form
+------------------------------------------------------------------- */
 const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData }) => {
   const [formData, setFormData] = useState({
     session: '2026-2027',
@@ -278,9 +284,7 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
     try {
       const response = await fetch('/api/sendEmail', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentName: applicationData.studentName,
           studentEmail: applicationData.email,
@@ -288,19 +292,11 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
         }),
       });
       
-      const result = await response.json(); // Wait for the JSON response
-      
-      if (!response.ok) {
-        // If response is not ok, throw the error message from Brevo
-        throw new Error(result.error || 'Email server responded with an error');
-      }
-      
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Email server responded with an error');
       console.log('Email sent successfully:', result);
-      
     } catch (error) {
       console.error("Failed to send confirmation email:", error);
-      // Log the specific error to the browser console for debugging
-      // Don't block the user, just log it
     }
   };
 
@@ -366,10 +362,9 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
 
       // 5. Save to Firestore
       const docRef = await addDoc(collection(db, "applications"), applicationData);
-      
       console.log("Application submitted with ID: ", docRef.id);
       
-      // 6. Send email (fire-and-forget, don't wait for it)
+      // 6. Send email (don't block the UX)
       sendConfirmationEmail(applicationData);
 
       // 7. Redirect to success page
@@ -443,8 +438,6 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
             <FormRadioGroup label="Religion" name="religion" options={['Hinduism', 'Christianity', 'Islam', 'Sikhism', 'Other']} value={formData.religion} onChange={handleChange} />
             <FormInput id="fatherName" label="Father's Name" name="fatherName" value={formData.fatherName} onChange={handleChange} required />
             <FormInput id="fatherOccupation" label="Father's Occupation" name="fatherOccupation" value={formData.fatherOccupation} onChange={handleChange} required />
-            
-            {/* --- EMAIL FIELD --- */}
             <FormInput 
               id="email" 
               label="Email Address" 
@@ -454,7 +447,6 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
               onChange={handleChange} 
               required 
             />
-            
             <FormInput id="whatsappNo" label="WhatsApp No." name="whatsappNo" type="tel" value={formData.whatsappNo} onChange={handleChange} required />
             <FormInput id="motherName" label="Mother's Name" name="motherName" value={formData.motherName} onChange={handleChange} required />
             <FormInput id="motherOccupation" label="Mother's Occupation" name="motherOccupation" value={formData.motherOccupation} onChange={handleChange} required />
@@ -545,7 +537,9 @@ const StudentApplicationForm = ({ setView, setSubmittedData, setStatusCheckData 
   );
 };
 
-// Application Data Component (used for PDF and Modal)
+/* ------------------------------------------------------------------
+   ApplicationData (used for PDF and Modal)
+------------------------------------------------------------------- */
 const ApplicationData = ({ data, isForModal = false }) => (
   <div className={`p-6 bg-white ${isForModal ? '' : 'border-2 border-gray-800'}`}>
     <h1 className={`text-2xl font-bold text-center ${isForModal ? 'text-gray-900' : 'text-white bg-cyan-600 p-3'}`}>Ajmal Super 40 - Admission Form</h1>
@@ -638,9 +632,10 @@ const ApplicationData = ({ data, isForModal = false }) => (
   </div>
 );
 
-// Admit Card Component (used for PDF and Status Check)
+/* ------------------------------------------------------------------
+   Admit Card (used for PDF and Status Check)
+------------------------------------------------------------------- */
 const AdmitCard = ({ data }) => (
-  // Removed fixed width (w-[8.5in]) to allow PDF scaling
   <div className="bg-white p-6 mx-auto">
     <div className="border-4 border-cyan-700 p-1">
       <div className="border border-cyan-700 p-6 relative">
@@ -743,8 +738,9 @@ const AdmitCard = ({ data }) => (
   </div>
 );
 
-
-// Submission Success Page
+/* ------------------------------------------------------------------
+   Submission Success Page
+------------------------------------------------------------------- */
 const SubmissionSuccess = ({ data, setView }) => {
   const printRef = useRef();
 
@@ -763,11 +759,9 @@ const SubmissionSuccess = ({ data, setView }) => {
       jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
     };
     
-    // Add a delay to ensure images (if any) are loaded before printing
     setTimeout(() => {
-      // The element is now off-screen, but html2pdf can still render it
       window.html2pdf().from(element).set(opt).save();
-    }, 2500); // 2.5 second delay
+    }, 2500);
   };
 
   return (
@@ -806,7 +800,7 @@ const SubmissionSuccess = ({ data, setView }) => {
         </div>
       </div>
 
-      {/* --- Printable Application Form (Moved Off-Screen) --- */}
+      {/* Printable Application Form (off-screen) */}
       <div className="absolute -left-[9999px] top-0">
         <div ref={printRef}>
           <ApplicationData data={data} />
@@ -816,8 +810,9 @@ const SubmissionSuccess = ({ data, setView }) => {
   );
 };
 
-
-// Admin Login Page
+/* ------------------------------------------------------------------
+   Admin Login Page
+------------------------------------------------------------------- */
 const AdminLogin = ({ setView, setAuthError }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -829,7 +824,7 @@ const AdminLogin = ({ setView, setAuthError }) => {
     setAuthError('');
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // Auth state change will handle the view change
+      // onAuthStateChanged will redirect
     } catch (error) {
       console.error(error);
       setAuthError(error.message);
@@ -850,9 +845,7 @@ const AdminLogin = ({ setView, setAuthError }) => {
         </div>
         <form className="space-y-6" onSubmit={handleLogin}>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email address
-            </label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
             <div className="mt-1 relative">
               <input
                 id="email"
@@ -869,9 +862,7 @@ const AdminLogin = ({ setView, setAuthError }) => {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
             <div className="mt-1 relative">
               <input
                 id="password"
@@ -909,14 +900,16 @@ const AdminLogin = ({ setView, setAuthError }) => {
   );
 };
 
-// --- NEW ADMIN DASHBOARD ---
+/* ------------------------------------------------------------------
+   Admin Dashboard
+------------------------------------------------------------------- */
 const AdminDashboard = () => {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedApp, setSelectedApp] = useState(null); // For the modal
+  const [selectedApp, setSelectedApp] = useState(null);
   
   // Data Fetching
   useEffect(() => {
@@ -925,8 +918,8 @@ const AdminDashboard = () => {
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const apps = [];
-      querySnapshot.forEach((doc) => {
-        apps.push({ id: doc.id, ...doc.data() });
+      querySnapshot.forEach((docSnap) => {
+        apps.push({ id: docSnap.id, ...docSnap.data() });
       });
       // Sort by submission date, newest first
       apps.sort((a, b) => (b.submittedAt?.toDate() || 0) - (a.submittedAt?.toDate() || 0));
@@ -947,22 +940,18 @@ const AdminDashboard = () => {
     .filter(app => 
       app.studentName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.applicationNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.email?.toLowerCase().includes(searchTerm.toLowerCase()) // Search by email
+      app.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
     
   // Status Update Logic
   const updateStatus = async (id, appData, newStatus) => {
-    if (!window.confirm(`Are you sure you want to ${newStatus.toLowerCase()} this application?`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to ${newStatus.toLowerCase()} this application?`)) return;
     
     let admitCardData = {};
     if (newStatus === 'Approved') {
-      // Generate Admit Card data
       admitCardData = {
         rollNumber: `AS40-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
         examTime: '09:30 AM - 12:30 PM',
-        // examCentre is already in appData.examCentre
       };
     }
     
@@ -970,7 +959,7 @@ const AdminDashboard = () => {
     try {
       await updateDoc(appRef, {
         status: newStatus,
-        ...admitCardData // Add admit card data if approved
+        ...admitCardData
       });
       // TODO: Send approval/rejection email
     } catch (err) {
@@ -979,7 +968,6 @@ const AdminDashboard = () => {
     }
   };
   
-  // Status Badge Component
   const StatusBadge = ({ status }) => {
     const colors = {
       Pending: 'bg-yellow-100 text-yellow-800',
@@ -1147,7 +1135,9 @@ const AdminDashboard = () => {
   );
 };
 
-// Student Status Check Page
+/* ------------------------------------------------------------------
+   Student Status Check Page
+------------------------------------------------------------------- */
 const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
   const [appNumber, setAppNumber] = useState(statusCheckData?.applicationNumber || '');
   const [dob, setDob] = useState(statusCheckData?.dob || '');
@@ -1178,7 +1168,7 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
       } else {
         const appData = querySnapshot.docs[0].data();
         setFoundApp(appData);
-        setStatusCheckData(appData); // Save for later
+        setStatusCheckData(appData);
       }
     } catch (err) {
       console.error(err);
@@ -1196,18 +1186,16 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
     }
     
     const opt = {
-      margin:       0.2, // Smaller margin for admit card
+      margin:       0.2,
       filename:     `Admit-Card-${foundApp.applicationNumber}.pdf`,
       image:        { type: 'jpeg', quality: 1.0 },
       html2canvas:  { scale: 2, useCORS: true, logging: true },
       jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
     };
     
-    // Add a delay to ensure images (if any) are loaded before printing
     setTimeout(() => {
-      // The element is now off-screen, but html2pdf can still render it
       window.html2pdf().from(element).set(opt).save();
-    }, 2500); // 2.5 second delay
+    }, 2500);
   };
 
   return (
@@ -1257,16 +1245,14 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
           </div>
         </form>
         
-        {/* --- Status/Admit Card Display --- */}
+        {/* Status/Admit Card Display */}
         {foundApp && (
           <div className="mt-12">
             {foundApp.status === 'Approved' ? (
-              // --- APPROVED: Show Admit Card ---
               <div className="text-center">
                 <h3 className="text-2xl font-bold text-green-600 mb-4">Status: Approved!</h3>
                 <p className="text-lg text-gray-700 mb-6">Congratulations, {foundApp.studentName}! Your application has been approved. You can now download your admit card.</p>
                 <div className="border-4 border-green-200 rounded-lg overflow-hidden">
-                  {/* We show a scaled-down preview, the real one is off-screen for printing */}
                   <div className="transform scale-75 -translate-y-16">
                      <AdmitCard data={foundApp} />
                   </div>
@@ -1280,14 +1266,12 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
                 </button>
               </div>
             ) : foundApp.status === 'Pending' ? (
-              // --- PENDING ---
               <div className="text-center p-6 bg-yellow-100 border border-yellow-300 rounded-lg">
                 <Clock className="w-12 h-12 text-yellow-600 mx-auto mb-4" />
                 <h3 className="text-2xl font-bold text-yellow-800 mb-2">Status: Pending</h3>
                 <p className="text-lg text-yellow-700">Hi {foundApp.studentName}, your application is still under review. Please check back later.</p>
               </div>
             ) : (
-              // --- REJECTED ---
               <div className="text-center p-6 bg-red-100 border border-red-300 rounded-lg">
                 <X className="w-12 h-12 text-red-600 mx-auto mb-4" />
                 <h3 className="text-2xl font-bold text-red-800 mb-2">Status: Rejected</h3>
@@ -1298,7 +1282,7 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
         )}
       </div>
 
-      {/* --- Printable Admit Card (Moved Off-Screen) --- */}
+      {/* Printable Admit Card (off-screen) */}
       {foundApp && foundApp.status === 'Approved' && (
         <div className="absolute -left-[9999px] top-0">
           <div ref={admitCardRef}>
@@ -1310,19 +1294,19 @@ const StatusCheck = ({ setView, statusCheckData, setStatusCheckData }) => {
   );
 };
 
-
-// Main App Component (Router)
+/* ------------------------------------------------------------------
+   Main App (Router)
+------------------------------------------------------------------- */
 export default function App() {
   const [view, setView] = useState('form'); // 'form', 'login', 'success', 'statusCheck'
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState(configError); // Set initial error from config
+  const [authError, setAuthError] = useState(configError); // from env validation
   const [submittedData, setSubmittedData] = useState(null);
-  const [statusCheckData, setStatusCheckData] = useState(null); // Persist status check
-  
-  // Auth listener
+  const [statusCheckData, setStatusCheckData] = useState(null);
+
   useEffect(() => {
-    // Only run auth logic if config is valid
+    // If env invalid, skip auth bootstrap
     if (configError) {
       setAuthLoading(false);
       return;
@@ -1331,7 +1315,6 @@ export default function App() {
     const signInPublicUser = async () => {
       try {
         if (auth.currentUser) {
-          // User is already signed in
           if (auth.currentUser.isAnonymous) {
             setUser({ uid: auth.currentUser.uid, isAnonymous: true });
           } else {
@@ -1339,7 +1322,6 @@ export default function App() {
             setView('dashboard');
           }
         } else {
-          // No user, sign in anonymously
           const userCredential = await signInAnonymously(auth);
           setUser({ uid: userCredential.user.uid, isAnonymous: true });
         }
@@ -1350,31 +1332,27 @@ export default function App() {
       setAuthLoading(false);
     };
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // User is signed in
-        if (user.isAnonymous) {
-          setUser({ uid: user.uid, isAnonymous: true });
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        if (u.isAnonymous) {
+          setUser({ uid: u.uid, isAnonymous: true });
         } else {
-          // This is our Admin
-          setUser({ uid: user.uid, email: user.email, isAnonymous: false });
-          setView('dashboard'); // Automatically go to dashboard if admin logs in
+          setUser({ uid: u.uid, email: u.email, isAnonymous: false });
+          setView('dashboard');
         }
         setAuthLoading(false);
       } else {
-        // User is signed out, sign them in anonymously for form submission
         setUser(null);
-        if (view !== 'login') {
-          setView('form');
-        }
+        if (view !== 'login') setView('form');
         await signInPublicUser();
       }
     });
     
-    // Custom token sign-in (Canvas specific)
     const signInWithToken = async () => {
       try {
+        // eslint-disable-next-line no-undef
         if (typeof __initial_auth_token !== 'undefined') {
+          // eslint-disable-next-line no-undef
           await signInWithCustomToken(auth, __initial_auth_token);
         } else {
           await signInPublicUser();
@@ -1389,18 +1367,16 @@ export default function App() {
     signInWithToken();
 
     return () => unsubscribe();
-  }, []); // Only run on mount
+  }, []); // mount only
   
   const handleLogout = async () => {
-    const oldUid = user?.uid; // Get admin UID
+    const oldUid = user?.uid;
     await signOut(auth);
     setUser(null);
     setView('form');
-    // onAuthStateChanged will handle signing back in anonymously
     console.log(`Admin ${oldUid} signed out.`);
   };
   
-  // Main Render
   const renderView = () => {
     if (authLoading) {
       return (
@@ -1417,17 +1393,13 @@ export default function App() {
           <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-gray-800">Connection Error</h2>
           <p className="text-gray-600 mt-2 max-w-lg">{authError}</p>
-          <p className="text-gray-600 mt-1">Please refresh the page or check your Vercel logs.</p>
+          <p className="text-gray-600 mt-1">Please refresh the page or check your deployment logs.</p>
         </div>
       );
     }
     
-    // If user is an admin, always show dashboard
-    if (user && !user.isAnonymous) {
-      return <AdminDashboard />;
-    }
+    if (user && !user.isAnonymous) return <AdminDashboard />;
 
-    // Otherwise, show view based on state
     switch (view) {
       case 'form':
         return <StudentApplicationForm setView={setView} setSubmittedData={setSubmittedData} setStatusCheckData={setStatusCheckData} />;
@@ -1437,8 +1409,8 @@ export default function App() {
         return <SubmissionSuccess data={submittedData} setView={setView} />;
       case 'statusCheck':
         return <StatusCheck setView={setView} statusCheckData={statusCheckData} setStatusCheckData={setStatusCheckData} />;
-      case 'dashboard': // Should be caught by user check, but as a fallback
-        return <AdminLogin setView={setView} setAuthError={setAuthError} />; // Force login
+      case 'dashboard':
+        return <AdminLogin setView={setView} setAuthError={setAuthError} />;
       default:
         return <StudentApplicationForm setView={setView} setSubmittedData={setSubmittedData} setStatusCheckData={setStatusCheckData} />;
     }
@@ -1457,4 +1429,3 @@ export default function App() {
     </div>
   );
 }
-
